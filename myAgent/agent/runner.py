@@ -25,11 +25,11 @@ class AgentRunner():
     async def execute_tool(self):
         pass
 
-    async def run(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> AgentRunResult:
-        run_result = AgentRunResult(messages=messages, final_content=None, error=None)
+    async def run(self, spec: AgentRunSpec) -> AgentRunResult:
+        run_result = AgentRunResult(messages=spec.initial_messages, final_content=None, error=None)
 
         for _ in range(20):
-            response = await self.provider.chat(run_result.messages, tools)
+            response = await self.provider.chat(run_result.messages, spec.tools)
 
             if response.tool_calls:
                 msg = {"role": "assistant", "content": response.content,
