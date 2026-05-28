@@ -11,11 +11,24 @@ from openai.types.chat import ChatCompletionMessageToolCall
 load_dotenv()
 api_key = os.getenv("API_KEY")
 
+
 @dataclass
 class ToolCall:
     id: str
+    type: str
     name: str
     arguments: dict
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "type": self.type,
+            "function": {
+                "name": self.name,
+                "arguments": json.dumps(self.arguments, ensure_ascii=False),
+            },
+        }
+
 
 @dataclass
 class LLMResponse:
@@ -43,6 +56,7 @@ def parse_openai_tool_calls(
             ))
         return parsed
 
+
 class LLMProvider:
     def __init__(self):
         self.client = AsyncOpenAI(
@@ -50,10 +64,10 @@ class LLMProvider:
             base_url="https://api.deepseek.com"
         )
 
-    async def chat(self, msg: list[dict[str, Any]], tools: list[dict[str, Any]]) -> LLMResponse:
+    async def chat(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> LLMResponse:
         response = await self.client.chat.completions.create(
             model="deepseek-v4-flash",
-            messages=msg,
+            messages=messages,
             stream=False,
             tools=tools,
             extra_body={"thinking": {"type": "disabled"}},
