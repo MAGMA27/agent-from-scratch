@@ -1,11 +1,11 @@
 # Please install OpenAI SDK first: `pip3 install openai`
-import os
 import json
-from typing import List, Optional
+import os
+from dataclasses import dataclass, field
+from typing import Any, List, Optional
+
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
-from dataclasses import dataclass, field
-from typing import Any
 from openai.types.chat import ChatCompletionMessageToolCall
 
 load_dotenv()
@@ -29,12 +29,12 @@ def parse_openai_tool_calls(
         """将 OpenAI SDK 的 tool_calls 转换为自定义 ToolCall 列表"""
         if not openai_tool_calls:
             return []
-        
+
         parsed = []
         for tc in openai_tool_calls:
             # 解析 arguments（JSON 字符串 -> dict）
             args = json.loads(tc.function.arguments)
-            
+
             parsed.append(ToolCall(
                 id=tc.id,
                 type=tc.type,
@@ -63,5 +63,5 @@ class LLMProvider:
         content = message.content
         tool_calls = parse_openai_tool_calls(message.tool_calls)
 
-        return LLMResponse(content=content, 
+        return LLMResponse(content=content,
                            tool_calls=tool_calls)

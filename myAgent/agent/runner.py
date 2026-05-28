@@ -1,6 +1,7 @@
-from myAgent.providers.provider import LLMProvider
 from dataclasses import dataclass, field
 from typing import Any
+
+from myAgent.providers.provider import LLMProvider
 
 
 @dataclass(slots=True)
@@ -34,11 +35,11 @@ class AgentRunner():
             if response.tool_calls:
                 msg = {"role": "assistant", "content": response.content,
                        "tool_calls": [tc.to_dict() for tc in response.tool_calls]}
-                run_result.messages.append(msg)
+                run_result.messages.extend(msg)
 
                 for tc in response.tool_calls:
                     result = await self.execute_tool(tc.name, tc.arguments)
-                    run_result.messages.append({
+                    run_result.messages.extend({
                         "role": "tool",
                         "tool_call_id": tc.id,
                         "content": result,

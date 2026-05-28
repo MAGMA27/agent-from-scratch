@@ -1,7 +1,8 @@
-from enum import Enum, auto
 from dataclasses import dataclass, field
-from myAgent.bus.bus import InboundMessage, OutboundMessage
+from enum import Enum, auto
+
 from myAgent.agent.runner import AgentRunSpec
+from myAgent.bus.bus import InboundMessage, OutboundMessage
 
 SYSTEM_PROMPT = ""
 
@@ -60,6 +61,7 @@ class AgentCore:
         return ctx.outbound
 
     async def _state_restore(self, ctx: TurnContext) -> str:
+        ctx.session = ctx.msg.session
         return "ok"
 
     async def _state_build(self, ctx: TurnContext) -> str:
@@ -90,5 +92,6 @@ class AgentCore:
     async def _state_respond(self, ctx: TurnContext) -> str:
         ctx.outbound = OutboundMessage(
             content=ctx.final_content or "",
+            session=ctx.session
         )
         return "ok"
