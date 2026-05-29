@@ -3,7 +3,7 @@
 
 ## 阶段1-基本功能
 实现状态机驱动的 agent 循环、工具调用、provider 抽象，可以在终端界面进行多轮对话。
-细节：[基本功能笔记](docs\1_base_frameword.md)
+细节：[基本功能笔记](docs/1_base_frameword.md)
 
 ## To do
 - 阶段2-会话持久化
