@@ -8,7 +8,6 @@ class InboundMessage:
     """Message received from a chat channel."""
 
     content: str  # Message text
-    session: list[dict] = field(default_factory=list)
     timestamp: datetime = field(default_factory=datetime.now)
 
 
@@ -17,7 +16,6 @@ class OutboundMessage:
     """Message to send to a chat channel."""
 
     content: str
-    session: list[dict] = field(default_factory=list)
     reply_to: str | None = None
 
 

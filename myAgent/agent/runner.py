@@ -2,11 +2,13 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from myAgent.providers.provider import LLMProvider
+from myAgent.session.manager import Session
 
 
 @dataclass(slots=True)
 class AgentRunSpec:
     initial_messages: list[dict[str, Any]]
+    session: Session
     tools: list[dict[str, Any]]
     max_iterations: int
 
@@ -55,17 +57,25 @@ class AgentRunner():
                     "tool_calls": [tc.to_dict() for tc in response.tool_calls],
                 }
                 run_result.messages.append(assistant_msg)
+                spec.session.add_message(assistant_msg["role"], assistant_msg["content"], tool_calls=assistant_msg["tool_calls"])
                 run_result.tools_used.extend(tc.name for tc in response.tool_calls)
 
                 for tc in response.tool_calls:
                     result = await self.execute_tool(tc.name, tc.arguments)
-                    print(tc.name, tc.arguments)
+                    # print(tc.name, tc.arguments)
                     run_result.messages.append({
                         "role": "tool",
                         "tool_call_id": tc.id,
                         "name": tc.name,
                         "content": result,
                     })
+                    spec.session.add_message(
+                        "tool" ,
+                        result,
+                        tool_call_id=tc.id,
+                        name=tc.name
+                    )
+
                 continue
 
             run_result.final_content = response.content

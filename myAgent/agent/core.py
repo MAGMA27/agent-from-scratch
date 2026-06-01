@@ -1,8 +1,10 @@
 from dataclasses import dataclass, field
 from enum import Enum, auto
+from typing import Any
 
 from myAgent.agent.runner import AgentRunSpec
 from myAgent.bus.bus import InboundMessage, OutboundMessage
+from myAgent.session.manager import Session, SessionManager
 
 SYSTEM_PROMPT = ""
 
@@ -28,8 +30,11 @@ _TRANSITIONS = {
 class TurnContext:
     msg: InboundMessage
     state: TurnState = TurnState.RESTORE
-    session: list[dict] = field(default_factory=list)
-    messages: list[dict] = field(default_factory=list)
+
+    histories: list[dict[str, Any]] = field(default_factory=list)
+    all_messages: list[dict[str, Any]] = field(default_factory=list)
+    session: Session | None = None
+    session_manager: SessionManager | None = None
     final_content: str | None = None
     outbound: OutboundMessage | None = None
 
@@ -40,8 +45,9 @@ class AgentCore:
         self.runner = runner
         self.tools = tools
 
-    async def process_message(self, msg: InboundMessage) -> OutboundMessage | None:
-        ctx = TurnContext(msg=msg)
+    async def process_message(self, msg: InboundMessage, session_manager: SessionManager, session_key: str) -> OutboundMessage | None:
+        session = session_manager.get_or_create(session_key)
+        ctx = TurnContext(msg=msg, session=session, session_manager=session_manager)
 
         while ctx.state != TurnState.DONE:
             handler = {
@@ -61,37 +67,39 @@ class AgentCore:
         return ctx.outbound
 
     async def _state_restore(self, ctx: TurnContext) -> str:
-        ctx.session = ctx.msg.session
+        if ctx.session:
+            ctx.histories = ctx.session.get_history()
         return "ok"
 
     async def _state_build(self, ctx: TurnContext) -> str:
-        ctx.messages = [
+        ctx.all_messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
-            *ctx.session,
+            *ctx.histories,
             {"role": "user", "content": ctx.msg.content},
         ]
+        ctx.session.add_message("user", ctx.msg.content)
         return "ok"
 
     async def _state_run(self, ctx: TurnContext) -> str:
         spec = AgentRunSpec(
-            initial_messages=ctx.messages,
+            initial_messages=ctx.all_messages,
+            session=ctx.session,
             tools=self.tools,
             max_iterations=25,
         )
         result = await self.runner.run(spec)
         ctx.final_content = result.final_content
-        ctx.messages = result.messages
+        ctx.session.add_message(
+            'assistant', ctx.final_content
+        )
         return "ok"
 
     async def _state_save(self, ctx: TurnContext) -> str:
-        new_messages = ctx.messages[len(ctx.session) + 1:]
-        ctx.session.extend(new_messages)
-        # await save_session(ctx.msg.session, ctx.session)
+        await ctx.session_manager.save(ctx.session)
         return "ok"
 
     async def _state_respond(self, ctx: TurnContext) -> str:
         ctx.outbound = OutboundMessage(
             content=ctx.final_content or "",
-            session=ctx.session
         )
         return "ok"

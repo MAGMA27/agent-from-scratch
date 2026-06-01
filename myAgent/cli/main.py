@@ -1,10 +1,12 @@
 import asyncio
 from datetime import datetime
+from pathlib import Path
 
 from myAgent.agent.core import AgentCore
 from myAgent.agent.runner import AgentRunner
 from myAgent.bus.bus import InboundMessage, MessageBus
 from myAgent.providers.provider import LLMProvider
+from myAgent.session.manager import SessionManager
 
 
 async def handle_get_weather(city: str) -> str:
@@ -52,7 +54,9 @@ async def main():
     runner.register_tool("current_time", handle_current_time)
 
     core = AgentCore(bus, runner, tool_definitions)
-    session = []
+    session_manager = SessionManager(Path('workspace'))
+    session_key = '202606012020'
+
 
     print("Agent ready. Type your message (/exit to quit)")
     print("Available tools: get_weather, current_time")
@@ -65,11 +69,12 @@ async def main():
         if not user_input.strip():
             continue
 
-        msg = InboundMessage(content=user_input, session=session)
-        response = await core.process_message(msg)
+
+
+        msg = InboundMessage(content=user_input)
+        response = await core.process_message(msg, session_manager, session_key)
 
         if response:
-            session = response.session
             print(response.content)
         print()
 
