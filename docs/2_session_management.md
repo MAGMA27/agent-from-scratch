@@ -42,4 +42,8 @@ dataclass Session，代表单个会话，需要维护以下内容：
 
 为了应对潜在的并发问题，避免session文件损坏，还需要用asyncio.Lock实现并发安全。
 
+在 AgentCore 中添加 self._session_locks，管理会话的锁，然后在锁内执行状态切换操作。
 
+## mid-turn injection
+
+在 AgentCore 中添加加队列存储和路由入口，判断是否有正在处理的session，如果有，将消息加入队列，如果没有，在 process_message 方法中创建队列，上一条 message 结束后循环消费。只返回最后处理的那条消息。

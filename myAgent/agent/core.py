@@ -1,3 +1,4 @@
+import asyncio
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Any
@@ -44,11 +45,63 @@ class AgentCore:
         self.bus = bus
         self.runner = runner
         self.tools = tools
+        self._session_locks: dict[str, asyncio.Lock] = {}
+        self._pending_queues: dict[str, asyncio.Queue] = {}
+
+    async def handle_message(
+        self, msg: InboundMessage,
+        session_manager: SessionManager,
+        session_key: str,
+    ) -> OutboundMessage | None:
+        """entry piont: maintain a turn or create a new one"""
+        # exist a turn
+        if session_key in self._pending_queues:
+            try:
+                self._pending_queues[session_key].put_nowait(msg)
+            except asyncio.QueueFull:
+                pass  
+            return None 
+
+        # new one
+        return await self.process_message(msg, session_manager, session_key)
 
     async def process_message(self, msg: InboundMessage, session_manager: SessionManager, session_key: str) -> OutboundMessage | None:
-        session = session_manager.get_or_create(session_key)
-        ctx = TurnContext(msg=msg, session=session, session_manager=session_manager)
+        lock = self._session_locks.setdefault(session_key, asyncio.Lock())
 
+        # registration
+        pending = asyncio.Queue(maxsize=20)
+        self._pending_queues[session_key] = pending
+
+        try:
+            async with lock:
+                session = session_manager.get_or_create(session_key)
+                ctx = TurnContext(msg=msg, session=session, session_manager=session_manager)
+
+                # process the first msg
+                await self._run_turn(ctx)
+
+                # query if the queue is empty
+                while True:
+                    try:
+                        next_msg = pending.get_nowait()
+                    except asyncio.QueueEmpty:
+                        break
+
+                    # not empty
+                    ctx.msg = next_msg
+                    ctx.state = TurnState.RESTORE
+                    ctx.histories = []
+                    ctx.all_messages = []
+                    ctx.final_content = None
+                    await self._run_turn(ctx)
+
+            return ctx.outbound
+
+        finally:
+            # logout queue
+            self._pending_queues.pop(session_key, None)
+
+    async def _run_turn(self, ctx: TurnContext) -> None:
         while ctx.state != TurnState.DONE:
             handler = {
                 TurnState.RESTORE: self._state_restore,
@@ -63,8 +116,6 @@ class AgentCore:
             if next_state is None:
                 raise RuntimeError(f"No transition from {ctx.state} on {event!r}")
             ctx.state = next_state
-
-        return ctx.outbound
 
     async def _state_restore(self, ctx: TurnContext) -> str:
         if ctx.session:

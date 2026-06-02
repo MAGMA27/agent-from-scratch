@@ -72,7 +72,7 @@ async def main():
 
 
         msg = InboundMessage(content=user_input)
-        response = await core.process_message(msg, session_manager, session_key)
+        response = await core.handle_message(msg, session_manager, session_key)
 
         if response:
             print(response.content)
