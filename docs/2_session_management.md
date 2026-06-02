@@ -47,3 +47,6 @@ dataclass Session，代表单个会话，需要维护以下内容：
 ## mid-turn injection
 
 在 AgentCore 中添加加队列存储和路由入口，判断是否有正在处理的session，如果有，将消息加入队列，如果没有，在 process_message 方法中创建队列，上一条 message 结束后循环消费。只返回最后处理的那条消息。
+
+# 参考资料
+1. 开源项目[nanobot](https://github.com/HKUDS/nanobot)

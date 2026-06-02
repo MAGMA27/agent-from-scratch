@@ -5,8 +5,11 @@
 实现状态机驱动的 agent 循环、工具调用、provider 抽象，可以在终端界面进行多轮对话。
 细节：[基本功能笔记](docs/1_base_frameword.md)
 
+## 阶段2-会话持久化
+通过 session manager 维护 session 数据类，将会话数据存储到本地实现持久化，并增加 `_session_locks` 与 `_pending_queues`，管理并发与mid-turn injection。
+细节：[会话管理笔记](docs/2_session_management.md)
+
 ## To do
-- 阶段2-会话持久化
 - 阶段3-上下文窗口管理
 - 阶段4-工具系统
 - 阶段5-聊天app接入
