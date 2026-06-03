@@ -3,6 +3,7 @@ from datetime import datetime
 from pathlib import Path
 
 from myAgent.agent.core import AgentCore
+from myAgent.agent.memory import Consolidator, MemoryStore
 from myAgent.agent.runner import AgentRunner
 from myAgent.bus.bus import InboundMessage, MessageBus
 from myAgent.providers.provider import LLMProvider
@@ -18,9 +19,19 @@ async def handle_current_time() -> str:
 
 
 async def main():
+    workspace = Path("workspace")
     provider = LLMProvider()
     runner = AgentRunner(provider)
     bus = MessageBus()
+
+    # Memory system
+    memory_store = MemoryStore(workspace)
+    consolidator = Consolidator(
+        store=memory_store,
+        provider=provider,
+        model="deepseek-v4-flash",
+        context_limit=65536,
+    )
 
     tool_definitions = [
         {
@@ -53,10 +64,13 @@ async def main():
     runner.register_tool("get_weather", handle_get_weather)
     runner.register_tool("current_time", handle_current_time)
 
-    core = AgentCore(bus, runner, tool_definitions)
-    session_manager = SessionManager(Path('workspace'))
+    core = AgentCore(
+        bus, runner, tool_definitions,
+        consolidator=consolidator,
+        memory_store=memory_store,
+    )
+    session_manager = SessionManager(workspace)
     session_key = '202606012020'
-
 
     print("Agent ready. Type your message (/exit to quit)")
     print("Available tools: get_weather, current_time")
@@ -68,8 +82,6 @@ async def main():
             break
         if not user_input.strip():
             continue
-
-
 
         msg = InboundMessage(content=user_input)
         response = await core.handle_message(msg, session_manager, session_key)

@@ -7,6 +7,7 @@ requires-python = ">=3.13"
 dependencies = [
     "openai>=2.8.0",
     "python-dotenv>=1.2.2",
+    "tiktoken>=0.13.0",
     "typer>=0.26.2",
 ]
 
@@ -32,3 +33,7 @@ target-version = "py311"
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W"]
 ignore = ["E501"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

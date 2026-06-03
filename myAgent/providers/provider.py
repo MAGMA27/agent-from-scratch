@@ -39,15 +39,12 @@ class LLMResponse:
 def parse_openai_tool_calls(
         openai_tool_calls: Optional[List[ChatCompletionMessageToolCall]]
     ) -> List[ToolCall]:
-        """将 OpenAI SDK 的 tool_calls 转换为自定义 ToolCall 列表"""
         if not openai_tool_calls:
             return []
 
         parsed = []
         for tc in openai_tool_calls:
-            # 解析 arguments（JSON 字符串 -> dict）
             args = json.loads(tc.function.arguments)
-
             parsed.append(ToolCall(
                 id=tc.id,
                 type=tc.type,
@@ -64,14 +61,22 @@ class LLMProvider:
             base_url="https://api.deepseek.com"
         )
 
-    async def chat(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> LLMResponse:
-        response = await self.client.chat.completions.create(
-            model="deepseek-v4-flash",
-            messages=messages,
-            stream=False,
-            tools=tools,
-            extra_body={"thinking": {"type": "disabled"}},
-        )
+    async def chat(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+        *,
+        model: str | None = None,
+    ) -> LLMResponse:
+        kwargs: dict[str, Any] = {
+            "model": model or "deepseek-v4-flash",
+            "messages": messages,
+            "stream": False,
+        }
+        if tools:
+            kwargs["tools"] = tools
+        kwargs.setdefault("extra_body", {"thinking": {"type": "disabled"}})
+        response = await self.client.chat.completions.create(**kwargs)
 
         message = response.choices[0].message
         content = message.content

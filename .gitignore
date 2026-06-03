@@ -12,5 +12,6 @@ wheels/
 .ruff_cache
 
 .env
+.pytest_cache
 
 workspace

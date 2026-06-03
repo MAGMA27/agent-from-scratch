@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from myAgent.utils.token_counter import count_message_tokens
 
 
 def find_legal_message_start(messages: list[dict[str, Any]]) -> int:
@@ -44,6 +45,22 @@ class Session():
         self.messages.append(msg)
         self.updated_at = datetime.now()
 
+    def get_window(self, messages: list[dict[str, Any]], context_budget: int) -> list[dict[str, Any]]:
+        """from end to head, comsuming cotext budget"""
+        if context_budget <= 0:
+            return []
+
+        kept = []
+        used = 0
+        for msg in reversed(messages):
+            tokens = count_message_tokens(msg)
+            if kept and used + tokens > context_budget:
+                break
+            kept.append(msg)
+            used += tokens
+        kept.reverse()
+        return kept
+
     def get_history(
         self,
         max_messages: int = 120,
@@ -56,6 +73,8 @@ class Session():
         unconsolidated = self.messages[self.last_consolidated:]
         max_messages = max_messages if max_messages > 0 else 120
         sliced = unconsolidated[-max_messages:]
+
+        # sliced = self.get_window(sliced, max_tokens)
 
         # begaining position alignment
         # if the message is deliveried by bot, and user may be replying to it

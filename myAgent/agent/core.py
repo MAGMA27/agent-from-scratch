@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Any
 
+from myAgent.agent.memory import Consolidator, MemoryStore, get_memory_context
 from myAgent.agent.runner import AgentRunSpec
 from myAgent.bus.bus import InboundMessage, OutboundMessage
 from myAgent.session.manager import Session, SessionManager
@@ -32,7 +33,7 @@ class TurnContext:
     msg: InboundMessage
     state: TurnState = TurnState.RESTORE
 
-    histories: list[dict[str, Any]] = field(default_factory=list)
+    history_messages: list[dict[str, Any]] = field(default_factory=list)
     all_messages: list[dict[str, Any]] = field(default_factory=list)
     session: Session | None = None
     session_manager: SessionManager | None = None
@@ -41,10 +42,14 @@ class TurnContext:
 
 
 class AgentCore:
-    def __init__(self, bus, runner, tools):
+    def __init__(self, bus, runner, tools, *,
+                 consolidator: Consolidator | None = None,
+                 memory_store: MemoryStore | None = None):
         self.bus = bus
         self.runner = runner
         self.tools = tools
+        self.consolidator = consolidator
+        self.memory_store = memory_store
         self._session_locks: dict[str, asyncio.Lock] = {}
         self._pending_queues: dict[str, asyncio.Queue] = {}
 
@@ -101,6 +106,12 @@ class AgentCore:
             # logout queue
             self._pending_queues.pop(session_key, None)
 
+    async def _compact_if_needed(self, session: Session) -> None:
+        """Run consolidation before building context."""
+        if self.consolidator is None or not session.messages:
+            return
+        await self.consolidator.compact(session)
+
     async def _run_turn(self, ctx: TurnContext) -> None:
         while ctx.state != TurnState.DONE:
             handler = {
@@ -119,13 +130,21 @@ class AgentCore:
 
     async def _state_restore(self, ctx: TurnContext) -> str:
         if ctx.session:
-            ctx.histories = ctx.session.get_history()
+            await self._compact_if_needed(ctx.session)
+            ctx.history_messages = ctx.session.get_history()
         return "ok"
 
     async def _state_build(self, ctx: TurnContext) -> str:
+        # Build system prompt with memory context injected.
+        system = SYSTEM_PROMPT
+        if self.memory_store and ctx.session:
+            mem = get_memory_context(self.memory_store, ctx.session)
+            if mem:
+                system = f"{system}\n\n{mem}" if system else mem
+
         ctx.all_messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            *ctx.histories,
+            {"role": "system", "content": system},
+            *ctx.history_messages,
             {"role": "user", "content": ctx.msg.content},
         ]
         ctx.session.add_message("user", ctx.msg.content)
