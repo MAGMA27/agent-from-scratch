@@ -1,5 +1,5 @@
 from typing import Any
-import json
+
 from myAgent.agent.tools.base import Tool
 
 
@@ -19,24 +19,21 @@ class ToolRegistry:
     def get(self, name: str) -> Tool | None:
         '''get a tool'''
         return self._tools.get(name, None)
-    
+
     @property
     def tool_spec(self) -> list[dict[str, Any]]:
         t_spec = []
         for _, tool in self._tools.items():
-            t_spec.append({
-                "type": "function",
-                "function": {
-                    "name": tool.name,
-                    "description": tool.description,
-                    "parameters": tool.parameters
-                }
-            })
+            t_spec.append(tool.to_schema())
         return t_spec
 
-    async def execute(self, name: str, params: dict) -> Any:
+    async def execute(self, name: str, params: dict[str, Any]) -> Any:
         tool = self._tools.get(name, None)
         if tool:
+            params = tool.cast_params(params)
+            validation = tool.validate_params(params)
+            if validation:
+                return f"json schema value validation failed: {validation}"
             return await tool.execute(**params)
         else:
             return None

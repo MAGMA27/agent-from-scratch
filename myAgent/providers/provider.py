@@ -19,7 +19,7 @@ class ToolCall:
     name: str
     arguments: dict
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "type": self.type,

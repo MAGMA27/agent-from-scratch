@@ -11,6 +11,7 @@ from myAgent.agent.tools.base import Tool, tool_parameters
 class ReadFile(Tool):
     name = "read_file"
     description = "Read contents of a file"
+    read_only = True
 
     async def execute(self, path: str, **kwargs) -> str:
         try:

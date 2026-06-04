@@ -154,6 +154,7 @@ class AgentCore:
             initial_messages=ctx.all_messages,
             session=ctx.session,
             max_iterations=25,
+            concurrency_enabled=True
         )
         result = await self.runner.run(spec)
         ctx.final_content = result.final_content
