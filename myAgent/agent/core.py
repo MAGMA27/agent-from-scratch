@@ -58,7 +58,6 @@ class AgentCore:
         session_key: str,
     ) -> OutboundMessage | None:
         """entry piont: maintain a turn or create a new one"""
-        # exist a turn
         if session_key in self._pending_queues:
             try:
                 self._pending_queues[session_key].put_nowait(msg)
@@ -66,13 +65,10 @@ class AgentCore:
                 pass
             return None
 
-        # new one
         return await self.process_message(msg, session_manager, session_key)
 
     async def process_message(self, msg: InboundMessage, session_manager: SessionManager, session_key: str) -> OutboundMessage | None:
         lock = self._session_locks.setdefault(session_key, asyncio.Lock())
-
-        # registration
         pending = asyncio.Queue(maxsize=20)
         self._pending_queues[session_key] = pending
 
@@ -81,17 +77,14 @@ class AgentCore:
                 session = session_manager.get_or_create(session_key)
                 ctx = TurnContext(msg=msg, session=session, session_manager=session_manager)
 
-                # process the first msg
                 await self._run_turn(ctx)
 
-                # query if the queue is empty
                 while True:
                     try:
                         next_msg = pending.get_nowait()
                     except asyncio.QueueEmpty:
                         break
 
-                    # not empty
                     ctx.msg = next_msg
                     ctx.state = TurnState.RESTORE
                     ctx.histories = []
@@ -102,11 +95,9 @@ class AgentCore:
             return ctx.outbound
 
         finally:
-            # logout queue
             self._pending_queues.pop(session_key, None)
 
     async def _compact_if_needed(self, session: Session) -> None:
-        """Run consolidation before building context."""
         if self.consolidator is None or not session.messages:
             return
         await self.consolidator.compact(session)
@@ -134,10 +125,9 @@ class AgentCore:
         return "ok"
 
     async def _state_build(self, ctx: TurnContext) -> str:
-        # Build system prompt with memory context injected.
         system = SYSTEM_PROMPT
         if self.memory_store and ctx.session:
-            mem = get_memory_context(self.memory_store, ctx.session)
+            mem = get_memory_context(self.memory_store, session_key=ctx.session.key)
             if mem:
                 system = f"{system}\n\n{mem}" if system else mem
 

@@ -1,6 +1,7 @@
 """Memory system: history.jsonl append-only log + lightweight Consolidator."""
 
 import json
+import os
 from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
@@ -22,7 +23,8 @@ _HISTORY_ENTRY_PREVIEW_MAX_CHARS = 4_000  # max chars per message in compact pro
 
 class MemoryStore:
     """Manage history.jsonl: an append-only log of consolidated conversation
-    summaries.  Each entry carries an auto-incrementing cursor and a timestamp.
+    summaries.  Each entry carries an auto-incrementing cursor, a timestamp,
+    and a session_key so different sessions' memories stay isolated.
     """
 
     def __init__(self, workspace: Path):
@@ -34,24 +36,32 @@ class MemoryStore:
 
     # -- public api -----------------------------------------------------------
 
-    def append_history(self, entry: str) -> int:
+    def append_history(self, entry: str, *, session_key: str = "") -> int:
         """Append a summary entry and return its cursor."""
         cursor = self._next_cursor()
         ts = datetime.now().strftime("%Y-%m-%d %H:%M")
         content = entry.rstrip()[:_HISTORY_ENTRY_MAX_CHARS]
-        record = {"cursor": cursor, "timestamp": ts, "content": content}
+        record = {
+            "cursor": cursor, "timestamp": ts,
+            "session_key": session_key, "content": content,
+        }
         with open(self.history_file, "a", encoding="utf-8") as f:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
         self._cursor_file.write_text(str(cursor), encoding="utf-8")
         return cursor
 
-    def get_recent_history(self) -> str:
-        """Return recent entries as a formatted string for the system prompt."""
-        entries = self._read_entries()
+    def get_recent_history(self, *, session_key: str = "") -> str:
+        """Return recent entries for *session_key* formatted for the system prompt.
+
+        When session_key is empty (default), returns all entries (legacy / global).
+        """
+        entries = [
+            e for e in self._read_entries()
+            if not session_key or e.get("session_key") == session_key
+        ]
         if not entries:
             return ""
 
-        # Take the most recent N entries, then truncate by char budget.
         recent = entries[-_RECENT_HISTORY_MAX_ENTRIES:]
         lines: list[str] = []
         total = 0
@@ -81,7 +91,6 @@ class MemoryStore:
         if self._cursor_file.exists():
             with suppress(ValueError, OSError):
                 return int(self._cursor_file.read_text(encoding="utf-8").strip()) + 1
-        # Fallback: scan the file and take max(cursor) + 1.
         entries = self._read_entries()
         return max((e.get("cursor", 0) for e in entries), default=0) + 1
 
@@ -120,18 +129,14 @@ class Consolidator:
 
     async def compact(self, session: Session) -> str | None:
         """Check token usage; compress if over budget.  Returns the summary or None."""
-        # Only consider unconsolidated messages — already-compressed ones are
-        # skipped by get_history() and should never drive further compaction.
         start = session.last_consolidated
         unconsolidated = session.messages[start:]
         total = sum(count_message_tokens(m) for m in unconsolidated)
         if total <= self.budget:
             return None
 
-        # Locate a safe boundary within the *unconsolidated* region.
-        # Stop at a user turn once enough tokens have been accounted for.
         removed = 0
-        boundary_rel = 0  # offset from `start`
+        boundary_rel = 0
         for i, msg in enumerate(unconsolidated):
             if i > 0 and msg["role"] == "user":
                 boundary_rel = i
@@ -142,31 +147,19 @@ class Consolidator:
         if boundary_rel == 0:
             return None
 
-        boundary = start + boundary_rel  # absolute index in session.messages
+        boundary = start + boundary_rel
         chunk = session.messages[start:boundary]
         formatted = "\n".join(
             f"[{m['role']}] {str(m.get('content', ''))[:_HISTORY_ENTRY_PREVIEW_MAX_CHARS]}"
             for m in chunk
         )
 
-        # Ask LLM to summarize.
         summary = await self._summarize(formatted)
         if not summary:
             return None
 
-        # Persist to history.jsonl.
-        self.store.append_history(summary)
-
-        # Advance consolidation cursor so these messages are never touched again.
+        self.store.append_history(summary, session_key=session.key)
         session.last_consolidated = boundary
-
-        # Store the summary in session metadata so get_memory_context() can
-        # inject it as [Archived Context Summary] on the next turn.
-        session.metadata["_last_summary"] = {
-            "text": summary,
-            "last_active": datetime.now().isoformat(),
-        }
-
         return summary
 
     async def _summarize(self, text: str) -> str | None:
@@ -183,20 +176,8 @@ class Consolidator:
             return None
 
 
-def get_memory_context(store: MemoryStore, session: Session) -> str:
-    """Build the memory section for the system prompt: recent history.jsonl
-    entries (from the Consolidator) plus any pending session summary.
+def get_memory_context(store: MemoryStore, *, session_key: str = "") -> str:
+    """Return recent history.jsonl entries for *session_key* formatted for
+    the system prompt.
     """
-    parts: list[str] = []
-
-    recent = store.get_recent_history()
-    if recent:
-        parts.append(recent)
-
-    meta = session.metadata.get("_last_summary")
-    if isinstance(meta, dict):
-        text = meta.get("text")
-        if text:
-            parts.append(f"[Archived Context Summary]\n\n{text}")
-
-    return "\n\n".join(parts)
+    return store.get_recent_history(session_key=session_key)
