@@ -1,6 +1,8 @@
 from dataclasses import dataclass, field
 from typing import Any
 
+from myAgent.agent.tools.read_file_tool import ReadFile
+from myAgent.agent.tools.registry import ToolRegistry
 from myAgent.providers.provider import LLMProvider
 from myAgent.session.manager import Session
 
@@ -9,7 +11,6 @@ from myAgent.session.manager import Session
 class AgentRunSpec:
     initial_messages: list[dict[str, Any]]
     session: Session
-    tools: list[dict[str, Any]]
     max_iterations: int
 
 
@@ -24,21 +25,9 @@ class AgentRunResult:
 class AgentRunner():
     def __init__(self, provider: LLMProvider):
         self.provider = provider
-        # 一个简单的工具注册表: name -> callable
-        self._tool_handlers: dict[str, callable] = {}
-
-    def register_tool(self, name: str, handler: callable) -> None:
-        self._tool_handlers[name] = handler
-
-    async def execute_tool(self, name: str, arguments: dict) -> str:
-        handler = self._tool_handlers.get(name)
-        if handler is None:
-            return f"Error: unknown tool '{name}'"
-        try:
-            result = await handler(**arguments)
-            return str(result) if result is not None else "(empty)"
-        except Exception as e:
-            return f"Error: {type(e).__name__}: {e}"
+        self.tools = ToolRegistry()
+        self.tools.register(ReadFile())
+        self.tool_spec = self.tools.tool_spec
 
     async def run(self, spec: AgentRunSpec) -> AgentRunResult:
         run_result = AgentRunResult(
@@ -48,7 +37,7 @@ class AgentRunner():
         )
 
         for _ in range(spec.max_iterations):
-            response = await self.provider.chat(run_result.messages, spec.tools)
+            response = await self.provider.chat(run_result.messages, self.tool_spec)
 
             if response.tool_calls:
                 assistant_msg = {
@@ -61,7 +50,7 @@ class AgentRunner():
                 run_result.tools_used.extend(tc.name for tc in response.tool_calls)
 
                 for tc in response.tool_calls:
-                    result = await self.execute_tool(tc.name, tc.arguments)
+                    result = await self.tools.execute(tc.name, tc.arguments)
                     # print(tc.name, tc.arguments)
                     run_result.messages.append({
                         "role": "tool",

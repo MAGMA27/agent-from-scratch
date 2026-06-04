@@ -4,8 +4,7 @@ from datetime import datetime
 
 import pytest
 
-from myAgent.session.manager import Session, SessionManager, find_legal_message_start
-
+from myAgent.session.manager import Session, find_legal_message_start
 
 # ── Session data model ────────────────────────────────────────────
 

@@ -2,7 +2,7 @@
 
 import pytest
 
-from myAgent.agent.runner import AgentRunResult, AgentRunSpec, AgentRunner
+from myAgent.agent.runner import AgentRunner, AgentRunResult, AgentRunSpec
 from myAgent.providers.provider import LLMResponse, ToolCall
 from myAgent.session.manager import Session
 

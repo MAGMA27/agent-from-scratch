@@ -42,12 +42,11 @@ class TurnContext:
 
 
 class AgentCore:
-    def __init__(self, bus, runner, tools, *,
+    def __init__(self, bus, runner, *,
                  consolidator: Consolidator | None = None,
                  memory_store: MemoryStore | None = None):
         self.bus = bus
         self.runner = runner
-        self.tools = tools
         self.consolidator = consolidator
         self.memory_store = memory_store
         self._session_locks: dict[str, asyncio.Lock] = {}
@@ -64,8 +63,8 @@ class AgentCore:
             try:
                 self._pending_queues[session_key].put_nowait(msg)
             except asyncio.QueueFull:
-                pass  
-            return None 
+                pass
+            return None
 
         # new one
         return await self.process_message(msg, session_manager, session_key)
@@ -154,7 +153,6 @@ class AgentCore:
         spec = AgentRunSpec(
             initial_messages=ctx.all_messages,
             session=ctx.session,
-            tools=self.tools,
             max_iterations=25,
         )
         result = await self.runner.run(spec)

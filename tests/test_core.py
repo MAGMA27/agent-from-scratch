@@ -8,7 +8,7 @@ import pytest
 from myAgent.agent.core import AgentCore, TurnContext, TurnState
 from myAgent.agent.runner import AgentRunResult
 from myAgent.bus.bus import InboundMessage, MessageBus
-from myAgent.session.manager import Session, SessionManager
+from myAgent.session.manager import SessionManager
 
 
 @pytest.fixture
