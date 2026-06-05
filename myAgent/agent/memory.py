@@ -1,7 +1,6 @@
 """Memory system: history.jsonl append-only log + lightweight Consolidator."""
 
 import json
-import os
 from contextlib import suppress
 from datetime import datetime
 from pathlib import Path

@@ -1,9 +1,9 @@
 import importlib
 import pkgutil
+from importlib.metadata import entry_points
 from typing import Any
 
 from loguru import logger
-from importlib.metadata import entry_points
 
 from myAgent.agent.tools.base import Tool
 from myAgent.agent.tools.registry import ToolRegistry

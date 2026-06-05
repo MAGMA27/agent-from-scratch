@@ -1,12 +1,11 @@
 # Please install OpenAI SDK first: `pip3 install openai`
 import json
 import os
-
-from loguru import logger
 from dataclasses import dataclass, field
 from typing import Any, List, Optional
 
 from dotenv import load_dotenv
+from loguru import logger
 from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletionMessageToolCall
 

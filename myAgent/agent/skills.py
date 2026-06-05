@@ -77,7 +77,7 @@ class SkillLoader():
         return all(shutil.which(cmd) for cmd in required_bins) and all(
             os.environ.get(var) for var in required_env_vars
         )
-    
+
     def _get_missing_requirements(self, skill_meta: dict) -> str:
         """Get a description of missing requirements."""
         requires = skill_meta.get("requires", {})
@@ -140,7 +140,7 @@ class SkillLoader():
         for key, value in parsed.items():
             metadata[str(key)] = value
         return metadata
-    
+
     def load_skill(self, name: str) -> str | None:
         """
         Load a skill by name.
@@ -159,7 +159,7 @@ class SkillLoader():
             if path.exists():
                 return path.read_text(encoding="utf-8")
         return None
-    
+
     def load_skills_for_context(self, skill_names: list[str]) -> str:
         """
         Load specific skills for inclusion in agent context.
@@ -192,7 +192,7 @@ class SkillLoader():
         if match:
             return content[match.end():].strip()
         return content
-    
+
     def build_skills_summary(self, exclude: set[str] | None = None) -> str:
         """
         Build a summary of all skills (name, description, path, availability).
@@ -225,7 +225,7 @@ class SkillLoader():
                 suffix = f" (unavailable: {missing})" if missing else " (unavailable)"
                 lines.append(f"- **{skill_name}** — {desc}{suffix}  `{entry['path']}`")
         return "\n".join(lines)
-    
+
     def get_always_skills(self) -> list[str]:
         """Get skills marked as always=true that meet requirements."""
         return [

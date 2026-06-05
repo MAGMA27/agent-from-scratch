@@ -7,9 +7,9 @@ from loguru import logger
 
 from myAgent.agent.memory import Consolidator, MemoryStore, get_memory_context
 from myAgent.agent.runner import AgentRunSpec
+from myAgent.agent.skills import SkillLoader
 from myAgent.bus.bus import InboundMessage, OutboundMessage
 from myAgent.session.manager import Session, SessionManager
-from myAgent.agent.skills import SkillLoader
 
 SYSTEM_PROMPT = ""
 

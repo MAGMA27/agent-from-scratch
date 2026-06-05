@@ -1,11 +1,11 @@
 import asyncio
-
-from loguru import logger
 from dataclasses import dataclass, field
 from typing import Any
 
-from myAgent.agent.tools.registry import ToolRegistry
+from loguru import logger
+
 from myAgent.agent.tools.loader import ToolLoader
+from myAgent.agent.tools.registry import ToolRegistry
 from myAgent.providers.provider import LLMProvider, ToolCall
 from myAgent.session.manager import Session
 
