@@ -303,11 +303,16 @@ def _run_interactive(
                         InboundMessage(content=command),
                         session_mgr,
                         session_key,
+                        on_delta=renderer.on_delta,
                     )
                 finally:
+                    await renderer.on_end()
                     await renderer.close()
 
-                if response and response.content:
+                # If streaming already rendered everything, skip
+                if renderer.streamed:
+                    pass
+                elif response and response.content:
                     renderer.render_complete(response.content)
                 else:
                     with renderer.pause_spinner():

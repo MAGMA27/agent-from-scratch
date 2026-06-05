@@ -42,6 +42,9 @@ class TurnContext:
     session_manager: SessionManager | None = None
     final_content: str | None = None
     outbound: OutboundMessage | None = None
+    # Streaming: async callback that receives each token as it's generated.
+    # Passed through from CLI -> core -> runner -> provider.
+    on_delta: "Any | None" = None
 
 
 class AgentCore:
@@ -61,8 +64,12 @@ class AgentCore:
         self, msg: InboundMessage,
         session_manager: SessionManager,
         session_key: str,
+        on_delta=None,
     ) -> OutboundMessage | None:
-        """entry point: maintain a turn or create a new one"""
+        """Entry point: maintain a turn or create a new one.
+
+        ``on_delta`` is an optional async callback(str) for streaming output.
+        """
         if session_key in self._pending_queues:
             try:
                 self._pending_queues[session_key].put_nowait(msg)
@@ -70,9 +77,17 @@ class AgentCore:
                 pass
             return None
 
-        return await self.process_message(msg, session_manager, session_key)
+        return await self.process_message(
+            msg, session_manager, session_key, on_delta=on_delta,
+        )
 
-    async def process_message(self, msg: InboundMessage, session_manager: SessionManager, session_key: str) -> OutboundMessage | None:
+    async def process_message(
+        self, msg: InboundMessage,
+        session_manager: SessionManager,
+        session_key: str,
+        *,
+        on_delta=None,
+    ) -> OutboundMessage | None:
         lock = self._session_locks.setdefault(session_key, asyncio.Lock())
         pending = asyncio.Queue(maxsize=20)
         self._pending_queues[session_key] = pending
@@ -80,7 +95,12 @@ class AgentCore:
         try:
             async with lock:
                 session = session_manager.get_or_create(session_key)
-                ctx = TurnContext(msg=msg, session=session, session_manager=session_manager)
+                ctx = TurnContext(
+                    msg=msg,
+                    session=session,
+                    session_manager=session_manager,
+                    on_delta=on_delta,
+                )
 
                 await self._run_turn(ctx)
 
@@ -158,7 +178,8 @@ class AgentCore:
             initial_messages=ctx.all_messages,
             session=ctx.session,
             max_iterations=25,
-            concurrency_enabled=True
+            concurrency_enabled=True,
+            on_delta=ctx.on_delta,  # <-- streaming callback passed through
         )
         result = await self.runner.run(spec)
         ctx.final_content = result.final_content

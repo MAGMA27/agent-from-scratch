@@ -6,7 +6,7 @@ from loguru import logger
 
 from myAgent.agent.tools.loader import ToolLoader
 from myAgent.agent.tools.registry import ToolRegistry
-from myAgent.providers.provider import LLMProvider, ToolCall
+from myAgent.providers.provider import LLMProvider, OnDelta, ToolCall
 from myAgent.session.manager import Session
 
 
@@ -16,6 +16,9 @@ class AgentRunSpec:
     session: Session
     max_iterations: int
     concurrency_enabled: bool = False
+    # Streaming: if set, the runner calls provider.chat_stream(on_delta=...)
+    # instead of provider.chat().  Each token fires this callback immediately.
+    on_delta: OnDelta | None = None
 
 @dataclass(slots=True)
 class AgentRunResult:
@@ -36,17 +39,16 @@ class AgentRunner:
     # -- concurrency control: partition + concurrency -------------------------------
 
     def _partition_tool_calls(self, tool_calls: list[ToolCall]) -> list[list[ToolCall] | ToolCall]:
-        '''parititon tool_calls
+        """Partition tool_calls into parallel-safe batches.
 
-        rule: The adjacent concurrency_safe tools can be executed in parallel if they belong to the same batch;
-        Each non-safety tool occupies a batch exclusively and executes serially.
-        The batches maintain their original order.
+        Rule: adjacent concurrency_safe tools execute together in one batch;
+        each non-safe tool occupies its own batch and runs serially.
+        Batches maintain original order.
 
-        example:
+        Example:
           [read(a), read(b), write(c), read(d)]
-          → [[read(a), read(b)], [write(c)], [read(d)]]
-
-        '''
+          -> [[read(a), read(b)], [write(c)], [read(d)]]
+        """
         batches = []
         current_batch = []
 
@@ -67,17 +69,17 @@ class AgentRunner:
         return batches
 
     async def _run_tool(self, tc: ToolCall) -> tuple[ToolCall, Any]:
-        '''execute single tool_call, return (tool_call, result_str)'''
+        """Execute single tool call, return (tool_call, result_str)."""
         result = await self.tools.execute(tc.name, tc.arguments)
         return (tc, result)
 
     async def _execute_batch(self, batch: list[ToolCall] | ToolCall,
                              run_result: AgentRunResult, spec: AgentRunSpec):
-        '''execute a batch of tool_calls。
+        """Execute a batch of tool_calls.
 
-        above one -> asyncio.gather parallel
-        only one -> await
-        '''
+        Multiple calls -> asyncio.gather in parallel.
+        Single call   -> await.
+        """
         if isinstance(batch, ToolCall):
             results = [await self._run_tool(batch)]
         else:
@@ -98,7 +100,18 @@ class AgentRunner:
                 name=tc.name,
             )
 
-    # --------- MAIN LOOP ------------------------------------------------------
+    # ------------------------------------------------------------------------
+    # MAIN LOOP
+    # ------------------------------------------------------------------------
+
+    async def _call_llm(self, messages: list[dict[str, Any]], spec: AgentRunSpec):
+        """Call the LLM -- streaming if spec.on_delta is set, otherwise regular."""
+        if spec.on_delta is not None:
+            return await self.provider.chat_stream(
+                messages, self.tool_spec,
+                on_delta=spec.on_delta,
+            )
+        return await self.provider.chat(messages, self.tool_spec)
 
     async def run(self, spec: AgentRunSpec) -> AgentRunResult:
         run_result = AgentRunResult(
@@ -107,9 +120,9 @@ class AgentRunner:
             error=None,
         )
 
-        for _ in range(spec.max_iterations):
-            logger.debug("Runner iteration {}/{}", _+1, spec.max_iterations)
-            response = await self.provider.chat(run_result.messages, self.tool_spec)
+        for iteration in range(spec.max_iterations):
+            logger.debug("Runner iteration {}/{}", iteration + 1, spec.max_iterations)
+            response = await self._call_llm(run_result.messages, spec)
 
             if response.tool_calls:
                 assistant_msg = {
