@@ -193,32 +193,6 @@ def main(
         _run_interactive(session, ws_path, render_md, verbose=verbose)
 
 
-@app.command()
-def agent(
-    message: str | None = typer.Option(
-        None, "--message", "-m", help="One-shot message (non-interactive mode)",
-    ),
-    session: str = typer.Option(
-        "default", "--session", "-s", help="Session key for conversation persistence",
-    ),
-    workspace: str = typer.Option(
-        "workspace", "--workspace", "-w", help="Workspace directory",
-    ),
-    no_md: bool = typer.Option(
-        False, "--no-md", help="Disable markdown rendering in output",
-    ),
-    verbose: int = typer.Option(
-        0, "--verbose", "-V", count=True, help="Increase log verbosity (-V for INFO, -VV for DEBUG)",
-    ),
-):
-    """Start interactive chat or send a one-shot message."""
-    ws_path = Path(workspace).resolve()
-    render_md = not no_md
-
-    if message:
-        _run_one_shot(message, session, ws_path, render_md, verbose=verbose)
-    else:
-        _run_interactive(session, ws_path, render_md, verbose=verbose)
 
 
 def _run_one_shot(
@@ -358,7 +332,7 @@ def status(
     ws = Path(workspace).resolve()
 
     console.print(f"\n{__logo__} myAgent v{__version__}\n")
-    console.print(f"Workspace: {ws} {'[green]鉁揫/green]' if ws.exists() else '[red]鉁梉/red]'}")
+    console.print(f"Workspace: {ws} {'[green]ok[/green]' if ws.exists() else '[red]missing[/red]'}")
 
     # Tools
     loader = ToolLoader()

@@ -22,8 +22,9 @@ skills 是热加载，并且渐进式披露的，从 agents 源码路径以及 w
 细节：[skills 系统](docs/5_skill_system.md)
 
 ## To do
-- 阶段6-MCP系统
-- 阶段7-聊天app接入
+- 阶段6-Hook
+- 阶段7-subagent
+- 阶段8-聊天app接入
 - 调试：结构化日志、测试
 - 交互：streaming支持、CLI
 - 梳理各模块架构，绘制流程图
