@@ -1,4 +1,6 @@
 
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from copy import deepcopy
@@ -100,17 +102,31 @@ class Schema(ABC):
         return Schema.validate_json_schema_value(value, self.to_json_schema(), path)
 
 class Tool(ABC):
+    """Agent capability: read files, run commands, etc."""
 
     _TYPE_MAP = _JSON_TYPE_MAP
     _BOOL_TRUE = frozenset(("true", "1", "yes"))
     _BOOL_FALSE = frozenset(("false", "0", "no"))
+
+    # ── class-level attributes for ToolLoader ──
+    _scopes: set[str] = {"core"}
+    _plugin_discoverable: bool = True
+
+    @classmethod
+    def enabled(cls, ctx: Any) -> bool:
+        """Whether this tool is available in the given context."""
+        return True
+
+    @classmethod
+    def create(cls, ctx: Any) -> Tool:
+        """Factory: create a tool instance from context."""
+        return cls()
 
     @staticmethod
     def _resolve_type(t: Any) -> str | None:
         """Pick first non-null type from JSON Schema unions like ``['string','null']``."""
         return Schema.resolve_json_schema_type(t)
 
-    """Agent capability: read files, run commands, etc."""
     @property
     @abstractmethod
     def name(self) -> str:

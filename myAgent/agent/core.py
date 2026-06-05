@@ -7,6 +7,7 @@ from myAgent.agent.memory import Consolidator, MemoryStore, get_memory_context
 from myAgent.agent.runner import AgentRunSpec
 from myAgent.bus.bus import InboundMessage, OutboundMessage
 from myAgent.session.manager import Session, SessionManager
+from myAgent.agent.skills import SkillLoader
 
 SYSTEM_PROMPT = ""
 
@@ -43,12 +44,14 @@ class TurnContext:
 
 class AgentCore:
     def __init__(self, bus, runner, *,
-                 consolidator: Consolidator | None = None,
-                 memory_store: MemoryStore | None = None):
+                 consolidator: Consolidator,
+                 memory_store: MemoryStore,
+                 skill_sys: SkillLoader):
         self.bus = bus
         self.runner = runner
         self.consolidator = consolidator
         self.memory_store = memory_store
+        self.skill_sys = skill_sys
         self._session_locks: dict[str, asyncio.Lock] = {}
         self._pending_queues: dict[str, asyncio.Queue] = {}
 
@@ -128,11 +131,20 @@ class AgentCore:
         system = SYSTEM_PROMPT
         if self.memory_store and ctx.session:
             mem = get_memory_context(self.memory_store, session_key=ctx.session.key)
-            if mem:
-                system = f"{system}\n\n{mem}" if system else mem
+
+        if self.skill_sys:
+            skills_prompt = {"role": "system", 
+                "content": "This is used for progressive loading - the agent can read the full"
+                "skill content using read_file when needed." + 
+                self.skill_sys.build_skills_summary()
+                }
+            
+        print(skills_prompt)
 
         ctx.all_messages = [
             {"role": "system", "content": system},
+            skills_prompt,
+            *mem,
             *ctx.history_messages,
             {"role": "user", "content": ctx.msg.content},
         ]

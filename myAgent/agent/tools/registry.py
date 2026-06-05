@@ -10,7 +10,7 @@ class ToolRegistry:
     Allows dynamic registration and execution of tools.
     """
     def __init__(self):
-        self._tools: dict[str: Tool] = {}
+        self._tools: dict[str, Tool] = {}
 
     def register(self, tool: Tool) -> None:
         '''regist tool'''
@@ -19,6 +19,10 @@ class ToolRegistry:
     def get(self, name: str) -> Tool | None:
         '''get a tool'''
         return self._tools.get(name, None)
+
+    def has(self, name: str) -> bool:
+        '''check if a tool is registered'''
+        return name in self._tools
 
     @property
     def tool_spec(self) -> list[dict[str, Any]]:

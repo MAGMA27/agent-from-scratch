@@ -7,6 +7,7 @@ from myAgent.agent.runner import AgentRunner
 from myAgent.bus.bus import InboundMessage, MessageBus
 from myAgent.providers.provider import LLMProvider
 from myAgent.session.manager import SessionManager
+from myAgent.agent.skills import SkillLoader
 
 
 async def main():
@@ -23,17 +24,20 @@ async def main():
         model="deepseek-v4-flash",
         context_limit=65536,
     )
+    # Skill system
+    skill_sys = SkillLoader(workspace)
+
 
     core = AgentCore(
         bus, runner,
         consolidator=consolidator,
         memory_store=memory_store,
+        skill_sys=skill_sys,
     )
     session_manager = SessionManager(workspace)
     session_key = '202606041133'
 
     print("Agent ready. Type your message (/exit to quit)")
-    print("Available tools: get_weather, current_time")
     print()
 
     while True:

@@ -2,8 +2,8 @@ import asyncio
 from dataclasses import dataclass, field
 from typing import Any
 
-from myAgent.agent.tools.read_file_tool import ReadFile
 from myAgent.agent.tools.registry import ToolRegistry
+from myAgent.agent.tools.loader import ToolLoader
 from myAgent.providers.provider import LLMProvider, ToolCall
 from myAgent.session.manager import Session
 
@@ -27,7 +27,8 @@ class AgentRunner:
     def __init__(self, provider: LLMProvider):
         self.provider = provider
         self.tools = ToolRegistry()
-        self.tools.register(ReadFile())
+        loader = ToolLoader()
+        loader.load(ctx=None, registry=self.tools, scope="core")
         self.tool_spec = self.tools.tool_spec
 
     # -- concurrency control: partition + concurrency -------------------------------
