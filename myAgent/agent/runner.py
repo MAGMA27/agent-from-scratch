@@ -1,4 +1,6 @@
 import asyncio
+
+from loguru import logger
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -106,6 +108,7 @@ class AgentRunner:
         )
 
         for _ in range(spec.max_iterations):
+            logger.debug("Runner iteration {}/{}", _+1, spec.max_iterations)
             response = await self.provider.chat(run_result.messages, self.tool_spec)
 
             if response.tool_calls:
@@ -114,6 +117,7 @@ class AgentRunner:
                     "content": response.content,
                     "tool_calls": [tc.to_dict() for tc in response.tool_calls],
                 }
+                logger.info("Tool calls: {}", [tc.name for tc in response.tool_calls])
                 run_result.messages.append(assistant_msg)
                 spec.session.add_message(
                     assistant_msg["role"], assistant_msg["content"],
@@ -132,7 +136,9 @@ class AgentRunner:
                 continue
 
             run_result.final_content = response.content
+            logger.info("Run complete, final content length: {}", len(run_result.final_content or ""))
             return run_result
 
         run_result.error = "Max iterations exceeded"
+        logger.warning("Max iterations ({}) exceeded", spec.max_iterations)
         return run_result

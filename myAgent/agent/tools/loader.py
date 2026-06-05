@@ -2,7 +2,7 @@ import importlib
 import pkgutil
 from typing import Any
 
-# from loguru import logger
+from loguru import logger
 from importlib.metadata import entry_points
 
 from myAgent.agent.tools.base import Tool
@@ -37,7 +37,7 @@ class ToolLoader:
             try:
                 module = importlib.import_module(f".{module_name}", self._package.__name__)
             except Exception:
-                # logger.exception("Failed to import tool module: %s", module_name)
+                logger.exception("Failed to import tool module: %s", module_name)
                 continue
             for attr_name in dir(module):
                 attr = getattr(module, attr_name)
@@ -55,7 +55,7 @@ class ToolLoader:
         results.sort(key=lambda cls: cls.__name__)
         self._discovered = results
         return results
-    
+
     def _discover_plugins(self) -> dict[str, type[Tool]]:
         """Discover external tool plugins registered via entry_points."""
         if self._plugins is not None:
@@ -76,11 +76,11 @@ class ToolLoader:
                 ):
                     plugins[ep.name] = cls
             except Exception:
-                # logger.exception("Failed to load tool plugin: %s", ep.name)
+                logger.exception("Failed to load tool plugin: %s", ep.name)
                 pass
         self._plugins = plugins
         return plugins
-    
+
     def load(self, ctx: Any, registry: ToolRegistry, *, scope: str = "core") -> list[str]:
         registered: list[str] = []
         builtin_names: set[str] = set()
@@ -96,20 +96,20 @@ class ToolLoader:
                     tool = tool_cls.create(ctx)
                     if registry.has(tool.name):
                         if is_plugin_source and tool.name in builtin_names:
-                        #     logger.warning(
-                        #         "Plugin %s skipped: conflicts with built-in tool %s",
-                        #         cls_label, tool.name,
-                        #     )
+                            logger.warning(
+                                "Plugin %s skipped: conflicts with built-in tool %s",
+                                cls_label, tool.name,
+                            )
                             continue
-                        # logger.warning(
-                        #     "Tool name collision: %s from %s overwrites existing",
-                        #     tool.name, cls_label,
-                        # )
+                        logger.warning(
+                            "Tool name collision: %s from %s overwrites existing",
+                            tool.name, cls_label,
+                        )
                     registry.register(tool)
                     registered.append(tool.name)
                     if not is_plugin_source:
                         builtin_names.add(tool.name)
                 except Exception:
-                    # logger.exception("Failed to register tool: %s", cls_label)
+                    logger.exception("Failed to register tool: %s", cls_label)
                     pass
         return registered

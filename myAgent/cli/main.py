@@ -1,5 +1,8 @@
 import asyncio
+import sys
 from pathlib import Path
+
+from loguru import logger
 
 from myAgent.agent.core import AgentCore
 from myAgent.agent.memory import Consolidator, MemoryStore
@@ -9,6 +12,18 @@ from myAgent.providers.provider import LLMProvider
 from myAgent.session.manager import SessionManager
 from myAgent.agent.skills import SkillLoader
 
+# Remove default handler and configure unified format
+logger.remove()
+_log_handler_id = logger.add(
+    sys.stderr,
+    format=(
+        "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
+        "<level>{level: <5}</level> | "
+        "<level>{message}</level>"
+    ),
+    level="INFO",
+    colorize=None,
+)
 
 async def main():
     workspace = Path("workspace")
@@ -27,7 +42,6 @@ async def main():
     # Skill system
     skill_sys = SkillLoader(workspace)
 
-
     core = AgentCore(
         bus, runner,
         consolidator=consolidator,
@@ -37,11 +51,13 @@ async def main():
     session_manager = SessionManager(workspace)
     session_key = '202606041133'
 
-    print("Agent ready. Type your message (/exit to quit)")
-    print()
+    logger.info("Agent ready. Type your message (/exit to quit)")
 
     while True:
-        user_input = input(">>> ")
+        try:
+            user_input = input(">>> ")
+        except (EOFError, KeyboardInterrupt):
+            break
         if user_input.lower() in ("/exit", "/quit", "exit"):
             break
         if not user_input.strip():
@@ -51,6 +67,7 @@ async def main():
         response = await core.handle_message(msg, session_manager, session_key)
 
         if response:
+            logger.info("[response] {}", response.content[:200])
             print(response.content)
         print()
 

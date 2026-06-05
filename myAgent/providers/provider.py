@@ -1,6 +1,8 @@
 # Please install OpenAI SDK first: `pip3 install openai`
 import json
 import os
+
+from loguru import logger
 from dataclasses import dataclass, field
 from typing import Any, List, Optional
 
@@ -78,6 +80,8 @@ class LLMProvider:
         kwargs.setdefault("extra_body", {"thinking": {"type": "disabled"}})
         response = await self.client.chat.completions.create(**kwargs)
 
+        logger.debug("LLM call: model={}, messages={}, tools={}",
+                     kwargs.get("model"), len(messages), len(tools or []))
         message = response.choices[0].message
         content = message.content
         tool_calls = parse_openai_tool_calls(message.tool_calls)

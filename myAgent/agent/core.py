@@ -3,6 +3,8 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Any
 
+from loguru import logger
+
 from myAgent.agent.memory import Consolidator, MemoryStore, get_memory_context
 from myAgent.agent.runner import AgentRunSpec
 from myAgent.bus.bus import InboundMessage, OutboundMessage
@@ -60,7 +62,7 @@ class AgentCore:
         session_manager: SessionManager,
         session_key: str,
     ) -> OutboundMessage | None:
-        """entry piont: maintain a turn or create a new one"""
+        """entry point: maintain a turn or create a new one"""
         if session_key in self._pending_queues:
             try:
                 self._pending_queues[session_key].put_nowait(msg)
@@ -90,7 +92,7 @@ class AgentCore:
 
                     ctx.msg = next_msg
                     ctx.state = TurnState.RESTORE
-                    ctx.histories = []
+                    ctx.history_messages = []
                     ctx.all_messages = []
                     ctx.final_content = None
                     await self._run_turn(ctx)
@@ -133,13 +135,13 @@ class AgentCore:
             mem = get_memory_context(self.memory_store, session_key=ctx.session.key)
 
         if self.skill_sys:
-            skills_prompt = {"role": "system", 
+            skills_prompt = {"role": "system",
                 "content": "This is used for progressive loading - the agent can read the full"
-                "skill content using read_file when needed." + 
+                "skill content using read_file when needed." +
                 self.skill_sys.build_skills_summary()
                 }
-            
-        print(skills_prompt)
+
+            logger.debug("Skills prompt built: {}", skills_prompt.get("content", "")[:200])
 
         ctx.all_messages = [
             {"role": "system", "content": system},

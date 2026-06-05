@@ -5,6 +5,7 @@ description = "agents-from-scratch"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "loguru>=0.7.0",
     "openai>=2.8.0",
     "python-dotenv>=1.2.2",
     "pyyaml>=6.0.3",
