@@ -21,12 +21,14 @@
 skills 是热加载，并且渐进式披露的，从 agents 源码路径以及 workspace 路径各维护一个 skills 文件夹，workspace 中的会覆盖内置 skills。 skill 的加载和发现主要依靠 SkillsLoader，它负责扫描路径、动态加载、提取 metadata、输出 summary 等。
 细节：[skills 系统](docs/5_skill_system.md)
 
+## 阶段6-Hook
+hook 系统是安插在 agent run 各个环节的钩子，它可以获取各个环节的流转信息，并且可以作为 harness 组件，在使用工具等操作前及时检查。
+细节：[skills 系统](docs/6_hook.md)
+
 ## To do
-- 阶段6-Hook
 - 阶段7-subagent
 - 阶段8-聊天app接入
-- 调试：结构化日志、测试
-- 交互：streaming支持、CLI
+- 调试：测试
 - 梳理各模块架构，绘制流程图
 
 # 参考资料

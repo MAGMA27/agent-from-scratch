@@ -4,9 +4,10 @@ from typing import Any
 
 from loguru import logger
 
+from myAgent.agent.hook import AgentHook, AgentHookContext, CompositeHook
 from myAgent.agent.tools.loader import ToolLoader
 from myAgent.agent.tools.registry import ToolRegistry
-from myAgent.providers.provider import LLMProvider, OnDelta, ToolCall
+from myAgent.providers.provider import LLMProvider, LLMResponse, OnDelta, ToolCall
 from myAgent.session.manager import Session
 
 
@@ -19,6 +20,8 @@ class AgentRunSpec:
     # Streaming: if set, the runner calls provider.chat_stream(on_delta=...)
     # instead of provider.chat().  Each token fires this callback immediately.
     on_delta: OnDelta | None = None
+    # Hooks: lifecycle callbacks injected into the agent loop.
+    hooks: list[AgentHook] | None = None
 
 @dataclass(slots=True)
 class AgentRunResult:
@@ -104,14 +107,35 @@ class AgentRunner:
     # MAIN LOOP
     # ------------------------------------------------------------------------
 
-    async def _call_llm(self, messages: list[dict[str, Any]], spec: AgentRunSpec):
-        """Call the LLM -- streaming if spec.on_delta is set, otherwise regular."""
-        if spec.on_delta is not None:
-            return await self.provider.chat_stream(
-                messages, self.tool_spec,
-                on_delta=spec.on_delta,
-            )
-        return await self.provider.chat(messages, self.tool_spec)
+    async def _call_llm(
+        self,
+        messages: list[dict[str, Any]],
+        spec: AgentRunSpec,
+        hook: AgentHook,
+        ctx: AgentHookContext,
+    ) -> LLMResponse:
+        """Call the LLM, routing streaming deltas to both spec.on_delta and hooks."""
+        wants_streaming = spec.on_delta is not None or hook.wants_streaming()
+
+        if not wants_streaming:
+            return await self.provider.chat(messages, self.tool_spec)
+
+        # Build a composite on_delta that fans out to both the CLI and hooks
+        async def _on_delta(delta: str) -> None:
+            if spec.on_delta:
+                await spec.on_delta(delta)
+            if hook.wants_streaming():
+                await hook.on_stream(ctx, delta)
+
+        response = await self.provider.chat_stream(
+            messages, self.tool_spec,
+            on_delta=_on_delta,
+        )
+
+        if hook.wants_streaming():
+            await hook.on_stream_end(ctx)
+
+        return response
 
     async def run(self, spec: AgentRunSpec) -> AgentRunResult:
         run_result = AgentRunResult(
@@ -120,38 +144,73 @@ class AgentRunner:
             error=None,
         )
 
-        for iteration in range(spec.max_iterations):
-            logger.debug("Runner iteration {}/{}", iteration + 1, spec.max_iterations)
-            response = await self._call_llm(run_result.messages, spec)
+        messages = run_result.messages
+        _hooks = spec.hooks or []
+        hook: AgentHook = CompositeHook(_hooks) if _hooks else AgentHook()
 
-            if response.tool_calls:
-                assistant_msg = {
-                    "role": "assistant",
-                    "content": response.content,
-                    "tool_calls": [tc.to_dict() for tc in response.tool_calls],
-                }
-                logger.info("Tool calls: {}", [tc.name for tc in response.tool_calls])
-                run_result.messages.append(assistant_msg)
-                spec.session.add_message(
-                    assistant_msg["role"], assistant_msg["content"],
-                    tool_calls=assistant_msg["tool_calls"],
+        await hook.before_run(list(messages))
+
+        try:
+            for iteration in range(spec.max_iterations):
+                logger.debug("Runner iteration {}/{}", iteration + 1, spec.max_iterations)
+                ctx = AgentHookContext(
+                    iteration=iteration,
+                    messages=messages,
                 )
-                run_result.tools_used.extend(tc.name for tc in response.tool_calls)
+                await hook.before_iteration(ctx)
 
-                if spec.concurrency_enabled:
-                    batches = self._partition_tool_calls(response.tool_calls)
-                else:
-                    batches = response.tool_calls
+                response = await self._call_llm(messages, spec, hook, ctx)
 
-                for batch in batches:
-                    await self._execute_batch(batch, run_result, spec)
+                if response.tool_calls:
+                    assistant_msg = {
+                        "role": "assistant",
+                        "content": response.content,
+                        "tool_calls": [tc.to_dict() for tc in response.tool_calls],
+                    }
+                    logger.info("Tool calls: {}", [tc.name for tc in response.tool_calls])
+                    run_result.messages.append(assistant_msg)
+                    spec.session.add_message(
+                        assistant_msg["role"], assistant_msg["content"],
+                        tool_calls=assistant_msg["tool_calls"],
+                    )
+                    run_result.tools_used.extend(tc.name for tc in response.tool_calls)
 
-                continue
+                    ctx.tool_calls = list(response.tool_calls)
+                    await hook.before_execute_tools(ctx)
 
-            run_result.final_content = response.content
-            logger.info("Run complete, final content length: {}", len(run_result.final_content or ""))
+                    if spec.concurrency_enabled:
+                        batches = self._partition_tool_calls(response.tool_calls)
+                    else:
+                        batches = response.tool_calls
+
+                    for batch in batches:
+                        await self._execute_batch(batch, run_result, spec)
+
+                    await hook.after_iteration(ctx)
+                    continue
+
+                run_result.final_content = response.content
+                logger.info("Run complete, final content length: {}", len(run_result.final_content or ""))
+                ctx.final_content = response.content
+                ctx.stop_reason = "end_turn"
+                await hook.after_iteration(ctx)
+                return run_result
+
+            run_result.error = "Max iterations exceeded"
+            logger.warning("Max iterations ({}) exceeded", spec.max_iterations)
             return run_result
 
-        run_result.error = "Max iterations exceeded"
-        logger.warning("Max iterations ({}) exceeded", spec.max_iterations)
-        return run_result
+        except Exception as exc:
+            error_msg = f"{type(exc).__name__}: {exc}"
+            run_result.error = error_msg
+            run_result.final_content = None
+            logger.exception("Runner crashed: {}", error_msg)
+            await hook.on_error(error_msg)
+            return run_result
+
+        finally:
+            await hook.after_run(
+                list(messages),
+                run_result.final_content,
+                run_result.error,
+            )

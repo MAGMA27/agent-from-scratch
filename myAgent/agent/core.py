@@ -5,6 +5,7 @@ from typing import Any
 
 from loguru import logger
 
+from myAgent.agent.hook import AgentHook
 from myAgent.agent.memory import Consolidator, MemoryStore, get_memory_context
 from myAgent.agent.runner import AgentRunSpec
 from myAgent.agent.skills import SkillLoader
@@ -57,6 +58,7 @@ class AgentCore:
         self.consolidator = consolidator
         self.memory_store = memory_store
         self.skill_sys = skill_sys
+        self.hooks: list[AgentHook] = []
         self._session_locks: dict[str, asyncio.Lock] = {}
         self._pending_queues: dict[str, asyncio.Queue] = {}
 
@@ -180,6 +182,7 @@ class AgentCore:
             max_iterations=25,
             concurrency_enabled=True,
             on_delta=ctx.on_delta,  # <-- streaming callback passed through
+            hooks=self.hooks,  # <-- lifecycle hooks passed through
         )
         result = await self.runner.run(spec)
         ctx.final_content = result.final_content

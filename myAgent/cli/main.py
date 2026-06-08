@@ -1,9 +1,10 @@
-"""CLI commands for myAgent 鈥?interactive chat and status."""
+"""CLI commands for myAgent — interactive chat and status."""
 
 import asyncio
 import signal
 import sys
 from pathlib import Path
+from typing import Any
 
 import typer
 from loguru import logger
@@ -16,6 +17,7 @@ from rich.console import Console
 
 from myAgent import __logo__, __version__
 from myAgent.agent.core import AgentCore
+from myAgent.agent.hook import AgentHook, AgentHookContext
 from myAgent.agent.memory import Consolidator, MemoryStore
 from myAgent.agent.runner import AgentRunner
 from myAgent.agent.skills import SkillLoader
@@ -91,7 +93,7 @@ async def _print_interactive_line(text: str) -> None:
     """Print a dimmed progress line via prompt_toolkit-safe Rich."""
 
     def _write() -> None:
-        ansi = _render_interactive_ansi(lambda c: c.print(f"  [dim]鈫?{text}[/dim]"))
+        ansi = _render_interactive_ansi(lambda c: c.print(f"  [dim]…{text}[/dim]"))
         print_formatted_text(ANSI(ansi), end="")
 
     await run_in_terminal(_write)
@@ -112,6 +114,56 @@ async def _read_interactive_input_async() -> str:
 
 def _is_exit_command(command: str) -> bool:
     return command.strip().lower() in EXIT_COMMANDS
+
+
+# ---------------------------------------------------------------------------
+# Example hook
+# ---------------------------------------------------------------------------
+
+
+class LoggingHook(AgentHook):
+    """Log each iteration and tool execution to the console.
+
+    Tweak or replace this to implement custom lifecycle callbacks --
+    e.g. send progress to a channel plugin, emit structured events, etc.
+    """
+
+    async def before_run(self, messages: list[dict[str, Any]]) -> None:
+        logger.info("Hook: before_run -- {} messages", len(messages))
+
+    async def after_run(
+        self,
+        messages: list[dict[str, Any]],
+        final_content: str | None,
+        error: str | None,
+    ) -> None:
+        logger.info(
+            "Hook: after_run -- {} messages, final={}chars, error={}",
+            len(messages),
+            len(final_content) if final_content else 0,
+            error,
+        )
+
+    async def on_error(self, error: str) -> None:
+        logger.info("Hook: on_error -- {}", error)
+
+    async def before_iteration(self, ctx: AgentHookContext) -> None:
+        logger.info(
+            "Hook: before_iteration #{} -- {} messages",
+            ctx.iteration + 1,
+            len(ctx.messages),
+        )
+
+    async def before_execute_tools(self, ctx: AgentHookContext) -> None:
+        names = [tc.name for tc in ctx.tool_calls]
+        logger.info("Hook: before_execute_tools -- {}", names)
+
+    async def after_iteration(self, ctx: AgentHookContext) -> None:
+        logger.info(
+            "Hook: after_iteration #{} -- stop={}",
+            ctx.iteration + 1,
+            ctx.stop_reason or "continue",
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -140,6 +192,8 @@ def _build_agent(workspace: Path) -> tuple[AgentCore, SessionManager, LLMProvide
         memory_store=memory_store,
         skill_sys=skill_sys,
     )
+    # --- Register hooks --------------------------------------------------
+    core.hooks.append(LoggingHook())
     session_manager = SessionManager(workspace)
     return core, session_manager, provider
 
@@ -177,7 +231,7 @@ def main(
         0, "--verbose", "-V", count=True, help="Increase log verbosity (-V for INFO, -VV for DEBUG)",
     ),
 ):
-    """myAgent 鈥?a from-scratch AI agent framework.
+    """myAgent — a from-scratch AI agent framework.
 
     Run without arguments to start interactive chat.
     """
@@ -191,7 +245,6 @@ def main(
         _run_one_shot(message, session, ws_path, render_md, verbose=verbose)
     else:
         _run_interactive(session, ws_path, render_md, verbose=verbose)
-
 
 
 
