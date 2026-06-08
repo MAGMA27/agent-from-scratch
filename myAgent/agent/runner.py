@@ -6,6 +6,7 @@ from loguru import logger
 
 from myAgent.agent.hook import AgentHook, AgentHookContext, CompositeHook
 from myAgent.agent.tools.loader import ToolLoader
+from myAgent.agent.tools.mcp import MCPManager, MCPServerConfig
 from myAgent.agent.tools.registry import ToolRegistry
 from myAgent.providers.provider import LLMProvider, LLMResponse, OnDelta, ToolCall
 from myAgent.session.manager import Session
@@ -32,12 +33,38 @@ class AgentRunResult:
 
 
 class AgentRunner:
-    def __init__(self, provider: LLMProvider):
+    def __init__(
+        self,
+        provider: LLMProvider,
+        mcp_servers: dict[str, MCPServerConfig] | None = None,
+    ):
         self.provider = provider
         self.tools = ToolRegistry()
         loader = ToolLoader()
         loader.load(ctx=None, registry=self.tools, scope="core")
+
+        # MCP integration: connect external MCP servers and register their tools
+        self._mcp = MCPManager(servers=mcp_servers or {})
+        self._mcp_connected = False
+
         self.tool_spec = self.tools.tool_spec
+
+    async def connect_mcp(self) -> None:
+        """Connect configured MCP servers and register their tools (lazy, idempotent)."""
+        if self._mcp_connected:
+            return
+        try:
+            await self._mcp.connect_all(self.tools)
+            self._mcp_connected = True
+            # Refresh tool specs so the LLM sees the new tools
+            self.tool_spec = self.tools.tool_spec
+        except Exception:
+            logger.exception("Failed to connect MCP servers")
+
+    async def close_mcp(self) -> None:
+        """Close all MCP server connections."""
+        await self._mcp.close_all()
+        self._mcp_connected = False
 
     # -- concurrency control: partition + concurrency -------------------------------
 

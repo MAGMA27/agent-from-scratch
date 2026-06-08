@@ -21,6 +21,7 @@ from myAgent.agent.hook import AgentHook, AgentHookContext
 from myAgent.agent.memory import Consolidator, MemoryStore
 from myAgent.agent.runner import AgentRunner
 from myAgent.agent.skills import SkillLoader
+from myAgent.agent.tools.mcp import MCPServerConfig
 from myAgent.bus.bus import InboundMessage, MessageBus
 from myAgent.cli.stream import StreamRenderer
 from myAgent.providers.provider import LLMProvider
@@ -174,7 +175,8 @@ class LoggingHook(AgentHook):
 def _build_agent(workspace: Path) -> tuple[AgentCore, SessionManager, LLMProvider]:
     """Wire up the agent subsystems and return (core, session_manager, provider)."""
     provider = LLMProvider()
-    runner = AgentRunner(provider)
+    mcp_servers = _build_mcp_servers()
+    runner = AgentRunner(provider, mcp_servers=mcp_servers)
     bus = MessageBus()
 
     memory_store = MemoryStore(workspace)
@@ -196,6 +198,45 @@ def _build_agent(workspace: Path) -> tuple[AgentCore, SessionManager, LLMProvide
     core.hooks.append(LoggingHook())
     session_manager = SessionManager(workspace)
     return core, session_manager, provider
+
+
+def _build_mcp_servers():
+    """Build MCP server configs from environment variables.
+
+    Set env vars like:
+      MCP_SERVERS=server1,server2
+      MCP_SERVER1_COMMAND=npx
+      MCP_SERVER1_ARGS=-y,@modelcontextprotocol/server-filesystem,/path
+      MCP_SERVER1_TIMEOUT=30
+    """
+    import os
+
+    server_names = os.environ.get("MCP_SERVERS", "")
+    if not server_names:
+        return {}
+
+    servers = {}
+    for name in server_names.split(","):
+        name = name.strip()
+        if not name:
+            continue
+        prefix = name.upper()
+        command = os.environ.get(f"MCP_{prefix}_COMMAND", "")
+        if not command:
+            logger.warning(
+                "MCP server '{}': no MCP_{}_COMMAND set, skipping",
+                name, prefix,
+            )
+            continue
+        args_raw = os.environ.get(f"MCP_{prefix}_ARGS", "")
+        args = args_raw.split(",") if args_raw else []
+        timeout_raw = os.environ.get(f"MCP_{prefix}_TIMEOUT", "30")
+        servers[name] = MCPServerConfig(
+            command=command,
+            args=args,
+            tool_timeout=int(timeout_raw),
+        )
+    return servers
 
 
 # ---------------------------------------------------------------------------
@@ -259,6 +300,7 @@ def _run_one_shot(
     async def _run() -> None:
         core, session_mgr, _provider = _build_agent(workspace)
 
+        await core.runner.connect_mcp()
         try:
             response = await core.handle_message(
                 InboundMessage(content=message),
@@ -266,7 +308,7 @@ def _run_one_shot(
                 session_key,
             )
         finally:
-            await core.runner.tools.close_all() if hasattr(core.runner.tools, "close_all") else None
+            await core.runner.close_mcp()
 
         if response and response.content:
             body = response.content
@@ -329,6 +371,7 @@ def _run_interactive(
         signal.signal(signal.SIGINT, _handle_signal)
         signal.signal(signal.SIGTERM, _handle_signal)
 
+        await core.runner.connect_mcp()
         try:
             while True:
                 try:
@@ -372,7 +415,7 @@ def _run_interactive(
                         pass
 
         finally:
-            await core.runner.tools.close_all() if hasattr(core.runner.tools, "close_all") else None
+            await core.runner.close_mcp()
 
     asyncio.run(_loop())
 
