@@ -25,9 +25,13 @@ skills 是热加载，并且渐进式披露的，从 agents 源码路径以及 w
 hook 系统是安插在 agent run 各个环节的钩子，它可以获取各个环节的流转信息，并且可以作为 harness 组件，在使用工具等操作前及时检查。
 细节：[skills 系统](docs/6_hook.md)
 
+## 阶段7-subagent
+采用主从 agent 架构，主 agent 可以启动多个子 agent 在后台进行复杂任务，所有任务由主 agent 统一分发和管理，系统整体行为更清晰，易于监控和调试。
+细节：[subagent](docs/7_subagent.md)
+
 ## To do
-- 阶段7-subagent
-- 阶段8-聊天app接入
+- 阶段8-sandbox
+- 阶段9-gateway
 - 调试：测试
 - 梳理各模块架构，绘制流程图
 

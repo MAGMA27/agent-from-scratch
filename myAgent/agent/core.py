@@ -1,7 +1,7 @@
 import asyncio
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
@@ -11,6 +11,9 @@ from myAgent.agent.runner import AgentRunSpec
 from myAgent.agent.skills import SkillLoader
 from myAgent.bus.bus import InboundMessage, OutboundMessage
 from myAgent.session.manager import Session, SessionManager
+
+if TYPE_CHECKING:
+    from myAgent.agent.subagent import SubagentManager
 
 SYSTEM_PROMPT = ""
 
@@ -52,15 +55,42 @@ class AgentCore:
     def __init__(self, bus, runner, *,
                  consolidator: Consolidator,
                  memory_store: MemoryStore,
-                 skill_sys: SkillLoader):
+                 skill_sys: SkillLoader,
+                 subagent_manager: "SubagentManager | None" = None):
         self.bus = bus
         self.runner = runner
         self.consolidator = consolidator
         self.memory_store = memory_store
         self.skill_sys = skill_sys
+        self.subagents = subagent_manager
         self.hooks: list[AgentHook] = []
         self._session_locks: dict[str, asyncio.Lock] = {}
         self._pending_queues: dict[str, asyncio.Queue] = {}
+
+        # Wire subagent results into pending queues so they appear mid-turn.
+        if self.subagents is not None:
+            self.subagents._on_result = self._inject_subagent_result
+
+    async def _inject_subagent_result(self, session_key: str, text: str) -> None:
+        """Inject a subagent result into the session's pending queue.
+
+        If the session has an active turn, the result is queued and will be
+        picked up by the drain loop in ``process_message``.  Otherwise it
+        is published to the message bus so the consumer loop can process it.
+        """
+        msg = InboundMessage(content=text)
+        queue = self._pending_queues.get(session_key)
+        if queue is not None:
+            try:
+                queue.put_nowait(msg)
+                logger.debug("Subagent result injected into session {}", session_key)
+            except asyncio.QueueFull:
+                logger.warning("Pending queue full for session {}, dropping subagent result", session_key)
+            return
+        # No active turn — publish to the bus; the consumer loop will pick it up.
+        msg = InboundMessage(content=text, session_key=session_key)
+        await self.bus.publish_inbound(msg)
+        logger.debug("Subagent result published to bus for session {}", session_key)
 
     async def handle_message(
         self, msg: InboundMessage,
@@ -105,6 +135,10 @@ class AgentCore:
                 )
 
                 await self._run_turn(ctx)
+
+                # Don't stream pending (subagent) messages through the
+                # same renderer -- they'd mix into the streaming buffer.
+                ctx.on_delta = None
 
                 while True:
                     try:
@@ -176,6 +210,10 @@ class AgentCore:
         return "ok"
 
     async def _state_run(self, ctx: TurnContext) -> str:
+        # Let SpawnTool know which session we're in.
+        from myAgent.agent.tools.spawn import set_spawn_session_key
+        set_spawn_session_key(ctx.session.key if ctx.session else "default")
+
         spec = AgentRunSpec(
             initial_messages=ctx.all_messages,
             session=ctx.session,

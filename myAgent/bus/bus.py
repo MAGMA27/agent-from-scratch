@@ -8,6 +8,7 @@ class InboundMessage:
     """Message received from a chat channel."""
 
     content: str  # Message text
+    session_key: str = "default"  # Target session for routing
     timestamp: datetime = field(default_factory=datetime.now)
 
 

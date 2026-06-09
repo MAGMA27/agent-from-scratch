@@ -1,7 +1,7 @@
 """CLI commands for myAgent — interactive chat and status."""
 
 import asyncio
-import signal
+import contextlib
 import sys
 from pathlib import Path
 from typing import Any
@@ -21,11 +21,22 @@ from myAgent.agent.hook import AgentHook, AgentHookContext
 from myAgent.agent.memory import Consolidator, MemoryStore
 from myAgent.agent.runner import AgentRunner
 from myAgent.agent.skills import SkillLoader
+from myAgent.agent.subagent import SubagentManager
 from myAgent.agent.tools.mcp import MCPServerConfig
+from myAgent.agent.tools.spawn import SpawnTool
 from myAgent.bus.bus import InboundMessage, MessageBus
 from myAgent.cli.stream import StreamRenderer
 from myAgent.providers.provider import LLMProvider
 from myAgent.session.manager import SessionManager
+
+# Force UTF-8 encoding for Windows console
+if sys.platform == "win32":
+    if sys.stdout.encoding != "utf-8":
+        import os as _os
+        _os.environ["PYTHONIOENCODING"] = "utf-8"
+        with contextlib.suppress(Exception):
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 # ---------------------------------------------------------------------------
 # Logger setup
@@ -188,15 +199,29 @@ def _build_agent(workspace: Path) -> tuple[AgentCore, SessionManager, LLMProvide
     )
     skill_sys = SkillLoader(workspace)
 
+    session_manager = SessionManager(workspace)
+
+    # --- Subagent infra -----------------------------------------------
+    subagent_mgr = SubagentManager(
+        runner=runner,
+        bus=bus,
+        workspace=workspace,
+        session_manager=session_manager,
+    )
+    spawn_tool = SpawnTool(manager=subagent_mgr)
+    runner.tools.register(spawn_tool)
+    runner.tool_spec = runner.tools.tool_spec
+    logger.info("Registered spawn tool for subagent support")
+
     core = AgentCore(
         bus, runner,
         consolidator=consolidator,
         memory_store=memory_store,
         skill_sys=skill_sys,
+        subagent_manager=subagent_mgr,
     )
     # --- Register hooks --------------------------------------------------
     core.hooks.append(LoggingHook())
-    session_manager = SessionManager(workspace)
     return core, session_manager, provider
 
 
@@ -363,59 +388,106 @@ def _run_interactive(
             f"or [bold]Ctrl+C[/bold] to quit\n"
         )
 
-        def _handle_signal(signum, _frame):
-            sig_name = signal.Signals(signum).name
-            console.print(f"\nReceived {sig_name}, goodbye!")
-            sys.exit(0)
-
-        signal.signal(signal.SIGINT, _handle_signal)
-        signal.signal(signal.SIGTERM, _handle_signal)
-
         await core.runner.connect_mcp()
         try:
-            while True:
-                try:
-                    user_input = await _read_interactive_input_async()
-                except KeyboardInterrupt:
-                    console.print("\nGoodbye!")
-                    break
+            # -- turn sync: block main loop until consumer finishes --
+            turn_done = asyncio.Event()
+            turn_done.set()  # first read unblocked
 
-                command = user_input.strip()
-                if not command:
-                    continue
-                if _is_exit_command(command):
-                    console.print("\nGoodbye!")
-                    break
+            # -- bus consumer: handles user messages AND subagent results --
+            async def _print_oob_markdown(text: str) -> None:
+                """Render out-of-band markdown safely via prompt_toolkit."""
+                from rich.markdown import Markdown
 
-                # Create a fresh renderer for this turn
-                renderer = StreamRenderer(
-                    render_markdown=render_markdown,
-                    show_spinner=True,
-                    bot_name="myAgent",
-                )
+                def _write():
+                    c = Console(force_terminal=sys.stdout.isatty())
+                    with c.capture() as capture:
+                        c.print()
+                        c.print(Markdown(text))
+                        c.print()
+                    print_formatted_text(ANSI(capture.get()), end="")
 
-                try:
-                    response = await core.handle_message(
-                        InboundMessage(content=command),
-                        session_mgr,
-                        session_key,
-                        on_delta=renderer.on_delta,
+                await run_in_terminal(_write)
+
+            async def _bus_consumer():
+                """Consume messages from the bus and dispatch to AgentCore."""
+                nonlocal turn_done
+                while True:
+                    try:
+                        msg = await core.bus.consume_inbound()
+                    except asyncio.CancelledError:
+                        return
+
+                    # Out-of-band? turn_done already set means main loop is
+                    # not waiting for us -- e.g. subagent result arriving
+                    # after the user's turn completed.  Process silently
+                    # and render safely via run_in_terminal.
+                    is_oob = turn_done.is_set()
+
+                    if is_oob:
+                        response = await core.handle_message(
+                            msg, session_mgr, msg.session_key, on_delta=None,
+                        )
+                        if response and response.content:
+                            await _print_oob_markdown(response.content)
+                        continue
+
+                    # User-initiated turn: normal streaming flow
+                    renderer = StreamRenderer(
+                        render_markdown=render_markdown,
+                        show_spinner=True,
+                        bot_name="myAgent",
                     )
-                finally:
-                    await renderer.on_end()
-                    await renderer.close()
+                    try:
+                        response = await core.handle_message(
+                            msg,
+                            session_mgr,
+                            msg.session_key,
+                            on_delta=renderer.on_delta,
+                        )
+                    finally:
+                        await renderer.on_end()
+                        await renderer.close()
 
-                # If streaming already rendered everything, skip
-                if renderer.streamed:
-                    pass
-                elif response and response.content:
-                    renderer.render_complete(response.content)
-                else:
-                    with renderer.pause_spinner():
-                        pass
+                    if response is None:
+                        continue  # mid-turn injection, nothing to render
+
+                    if response.content:
+                        renderer.render_complete(response.content)
+
+                    turn_done.set()  # unblock main loop
+
+            consumer = asyncio.create_task(_bus_consumer())
+
+            # -- main loop: read user input, publish to bus --
+            try:
+                while True:
+                    await turn_done.wait()  # wait for prev turn
+                    try:
+                        user_input = await _read_interactive_input_async()
+                    except KeyboardInterrupt:
+                        console.print("\nGoodbye!")
+                        break
+
+                    command = user_input.strip()
+                    if not command:
+                        continue
+                    if _is_exit_command(command):
+                        console.print("\nGoodbye!")
+                        break
+
+                    turn_done.clear()
+                    await core.bus.publish_inbound(
+                        InboundMessage(content=command, session_key=session_key)
+                    )
+            finally:
+                consumer.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await consumer
 
         finally:
             await core.runner.close_mcp()
+
 
     asyncio.run(_loop())
 

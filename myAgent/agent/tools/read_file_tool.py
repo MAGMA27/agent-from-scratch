@@ -12,6 +12,7 @@ class ReadFile(Tool):
     name = "read_file"
     description = "Read contents of a file"
     read_only = True
+    _scopes = {"core", "subagents"}
 
     async def execute(self, path: str, **kwargs) -> str:
         try:
