@@ -37,6 +37,8 @@ Session A 的一条消息：
    刚产生              Consolidator          Dream 消费
                       压缩后写入             history.jsonl 后
 ```
+![](../assets/images/memory_system.png)
+
 
 # 参考资料
 1. 开源项目[nanobot](https://github.com/HKUDS/nanobot)

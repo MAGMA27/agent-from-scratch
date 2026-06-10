@@ -35,5 +35,8 @@ Agent在本质上只是一个配备了上下文管理和工具调用的循环会
 └───────────────────────────────────────────────────┘
 ```
 
+# ReAct 基本流程
+![](../assets/images/base_framework.png)
+
 # 参考资料
 1. 开源项目[nanobot](https://github.com/HKUDS/nanobot)

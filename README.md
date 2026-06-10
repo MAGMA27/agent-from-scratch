@@ -30,10 +30,8 @@ hook 系统是安插在 agent run 各个环节的钩子，它可以获取各个�
 细节：[subagent](docs/7_subagent.md)
 
 ## To do
-- 阶段8-sandbox
-- 阶段9-gateway
+- 阶段8-gateway
 - 调试：测试
-- 梳理各模块架构，绘制流程图
 
 # 参考资料
 1. 开源项目[nanobot](https://github.com/HKUDS/nanobot)
