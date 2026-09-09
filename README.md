@@ -1,4 +1,9 @@
 # Agent 实战
+
+<p align="center">
+  <img src="assets/images/agent_header_4x3.png" alt="Agent 实战项目头图" width="720">
+</p>
+
 不依赖langchain、langraph等框架，基于 [nanobot](https://github.com/HKUDS/nanobot) 的拆解，从零搭建一个agent应用。
 
 ## 阶段1-基本功能
